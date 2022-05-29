@@ -1,0 +1,9 @@
+{
+  "lapps-consumer-version-mismatch":{
+    "build_vars" : {
+      "port" : 80
+    },
+    "build_cmd": "bash build.sh",
+    "dockerfile": "Dockerfile"
+  }
+}
