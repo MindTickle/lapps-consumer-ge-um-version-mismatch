@@ -1,4 +1,4 @@
-package ge_version_mismatch
+package main
 
 import (
 	"encoding/json"

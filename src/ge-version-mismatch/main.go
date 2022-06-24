@@ -1,4 +1,4 @@
-package ge_version_mismatch
+package main
 
 import (
 	"bytes"
@@ -20,23 +20,23 @@ import (
 	"time"
 )
 
-func GEVersionMismatchFix() {
+func main() {
 
 	ctx := context.Background()
 
-	conn, err := grpc.Dial("tdb-svc-sqlsvc.internal-grpc.prod.mindtickle.com:80", grpc.WithDefaultCallOptions(), grpc.WithInsecure())
+	conn, err := grpc.Dial("tdb-svc-sqlsvc.internal-grpc.staging.mindtickle.com:80", grpc.WithDefaultCallOptions(), grpc.WithInsecure())
 	if err != nil {
 		mtlog.Fatalf(nil, "Error connecting with sql service %+v", err)
 		return
 	}
 
-	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-migration", "prod")
+	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", "staging")
 
 	batchSize := 300
 	tenantIdList := []string{"920348052064774113"}
 	for _, tenantId := range tenantIdList {
 		mtlog.Infof(ctx, "tenant: %v", tenantId)
-		start := 208000
+		start := 0
 
 		for {
 			t1 := time.Now()
@@ -48,7 +48,7 @@ func GEVersionMismatchFix() {
 			}, common.RequestMeta{
 				OrgId:     tenantId,
 				CompanyId: "",
-				App:       "migration",
+				App:       "ge-version-mismatch",
 			})
 
 			if err != nil {
@@ -103,7 +103,7 @@ func GEVersionMismatchFix() {
 				t2 := time.Now()
 				resp, err := getDataInParallel(ctx, userModules, companyId, tenantId)
 				if err != nil {
-					mtlog.Errorf(ctx, "error whilw fetching data %v", err)
+					mtlog.Errorf(ctx, "error while fetching data %v", err)
 				}
 
 				//requestBody := ReinforcementRequestObject{UserModules: userModules}
@@ -157,15 +157,11 @@ func GEVersionMismatchFix() {
 					mtlog.Error(ctx, "error in update query %v", err)
 					return
 				}
-
 				mtlog.Infof(ctx, "update resp %v", execResp)
 			}
-
 			start = start + batchSize
 		}
-
 	}
-
 }
 
 func getDataInParallel(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
