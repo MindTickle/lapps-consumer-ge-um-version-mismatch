@@ -20,17 +20,24 @@ import (
 	"time"
 )
 
+const UpdateEntityVersionQuery = "update user_entity set entity_version = %d where tenant_id = %d and id = '%s'"
+const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, entity_version, entity_type from user_entity " +
+	"where tenant_id= %d order by id ASC limit %d offset %d"
+
 func main() {
 
 	ctx := context.Background()
 
-	conn, err := grpc.Dial("tdb-svc-sqlsvc.internal-grpc.staging.mindtickle.com:80", grpc.WithDefaultCallOptions(), grpc.WithInsecure())
+	track := "staging"
+	serviceHost := "tdb-svc-sqlsvc.internal-grpc.staging.mindtickle.com"
+
+	conn, err := grpc.Dial(serviceHost+":80", grpc.WithDefaultCallOptions(), grpc.WithInsecure())
 	if err != nil {
 		mtlog.Fatalf(nil, "Error connecting with sql service %+v", err)
 		return
 	}
 
-	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", "staging")
+	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", track)
 
 	batchSize := 300
 	tenantIdList := []string{"920348052064774113"}
@@ -40,7 +47,7 @@ func main() {
 
 		for {
 			t1 := time.Now()
-			sqlQuery := fmt.Sprintf("select tenant_id, company_id, user_id, entity_id, entity_version, entity_type from user_entity where tenant_id= %d order by id ASC limit %d offset %d", utils.StrTo(tenantId).OrgIdToInt64WithoutError(), batchSize, start)
+			sqlQuery := fmt.Sprintf(FetchDataByTenantId, utils.StrTo(tenantId).OrgIdToInt64WithoutError(), batchSize, start)
 			mtlog.Infof(ctx, "at row %v", start)
 			docs, err := sqlStoreHelper.SearchRows(ctx, &mtstore_helper.SearchRowRequest{
 				TableName: "user_entity",
@@ -224,7 +231,7 @@ func getBatches(modules []UserModule) [][]UserModule {
 }
 
 func GetUpdateQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_entity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
