@@ -17,10 +17,11 @@ import (
 	"google.golang.org/grpc/status"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"time"
 )
 
-const UpdateEntityVersionQuery = "update user_entity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateUserEntityVersionQuery = "update user_entity set entity_version = %d where tenant_id = %d and id = '%s'"
 const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, entity_version, entity_type from user_entity " +
 	"where tenant_id= %d order by id ASC limit %d offset %d"
 
@@ -40,9 +41,9 @@ func main() {
 	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", track)
 
 	batchSize := 300
-	tenantIdList := []string{"920348052064774113"}
+	tenantIdList := []string{"1232533287673100755"}
 	for _, tenantId := range tenantIdList {
-		mtlog.Infof(ctx, "tenant: %v", tenantId)
+		mtlog.Infof(ctx, "starting for tenantId %v", tenantId)
 		start := 0
 
 		for {
@@ -59,24 +60,21 @@ func main() {
 			})
 
 			if err != nil {
-				mtlog.Fatalf(nil, "Error connecting with doc service %+v", err)
+				mtlog.Fatalf(nil, "Error connecting with doc service  %+v failed for tenantId %s", err, tenantId)
 				return
 			}
 
 			if docs == nil || len(docs) == 0 {
 				mtlog.Warn(ctx, "no docs found")
 				docs = []*tickleDbSqlStore.SqlRow{}
-			}
-
-			if len(docs) < batchSize {
 				break
 			}
 
-			mtlog.Infof(ctx, "query time: %v", time.Since(t1))
+			mtlog.Infof(ctx, "query time: %v for tenantId %s ", time.Since(t1), tenantId)
 
 			userEntities, err := GetUserEntityFromSqlStoreDocs(docs)
 			if err != nil {
-				mtlog.Error(ctx, "failed to marshall req error: %s", err)
+				mtlog.Error(ctx, "failed to marshall req error: %s tenantId %s", err, tenantId)
 				err := status.Error(codes.Internal, "")
 				mtlog.Error(ctx, err)
 				return
@@ -132,13 +130,13 @@ func main() {
 				mtlog.Infof(ctx, "ge summary time: %v", time.Since(t2))
 			}
 
-			//bulkInitReq := make([]*platform_client.BulkInitRequest,0)
 			execQueries := make([]mtstore_helper.ExecRequest, 0)
 			for elKey, platformData := range platformELData {
 
 				if geData, exists := lappsUserEntities[elKey]; exists {
 					if platformData.EntityVersion != geData.Version {
-						mtlog.Infof(ctx, "Got data issue %v %v", platformData.CompanyId, elKey)
+						mtlog.Infof(ctx, "Got data issue %v %v tenantId %s companyId %s", platformData.CompanyId,
+							elKey, tenantId, platformData.CompanyId)
 
 						execQuery := GetUpdateQuery(tenantId, platformData.Id(), geData.Version)
 						execQueries = append(execQueries, mtstore_helper.ExecRequest{
@@ -148,10 +146,68 @@ func main() {
 							TableName: "user_entity",
 						})
 					}
+
+					userEntityDataId := fmt.Sprintf("%s|%s|%s",
+						strconv.FormatInt(platformData.UserId, 16),
+						strconv.FormatInt(platformData.CompanyId, 10),
+						strconv.FormatInt(platformData.EntityId, 10))
+					//6 table update "UPDATE", "COURSE", "ASSESSMENT", "CHECKLIST", "ILT", "REINFORCEMENT"
+					switch {
+					case platformData.EntityType == "UPDATE":
+						execQuery := UpdateUserQuickUpdateActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_qu_activity",
+						})
+					case platformData.EntityType == "COURSE":
+						execQuery := UpdateUserCourseActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_course_activity",
+						})
+					case platformData.EntityType == "ASSESSMENT":
+						execQuery := UpdateUserAssessmentActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_assessment_activity",
+						})
+					case platformData.EntityType == "CHECKLIST":
+						execQuery := UpdateUserChecklistActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_checklist_activity",
+						})
+					case platformData.EntityType == "ILT":
+						execQuery := UpdateUserIltActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_ilt_activity",
+						})
+					case platformData.EntityType == "REINFORCEMENT":
+						execQuery := UpdateUserReinforcementActivityQuery(tenantId, userEntityDataId, geData.Version)
+						execQueries = append(execQueries, mtstore_helper.ExecRequest{
+							Query: mtstore_helper.SQLQueryString{
+								Query: execQuery,
+							},
+							TableName: "user_reinforcement_activity",
+						})
+					}
 				}
 			}
 
 			if len(execQueries) > 0 {
+				mtlog.Infof(ctx, "Executing query tenantId %s", tenantId)
+				mtlog.Infof(ctx, "Query : %s", execQueries)
 				execResp, err := sqlStoreHelper.Exec(ctx, &execQueries, common.RequestMeta{
 					OrgId:           tenantId,
 					CompanyId:       "",
@@ -231,7 +287,50 @@ func getBatches(modules []UserModule) [][]UserModule {
 }
 
 func GetUpdateQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf(UpdateEntityVersionQuery,
+	return fmt.Sprintf(UpdateUserEntityVersionQuery,
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserCourseActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+
+	return fmt.Sprintf("update user_course_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserQuickUpdateActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+	return fmt.Sprintf("update user_qu_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserAssessmentActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+	return fmt.Sprintf("update user_assessment_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserChecklistActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+	return fmt.Sprintf("update user_checklist_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserIltActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+	return fmt.Sprintf("update user_ilt_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+		correctVersion,
+		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
+		rowId)
+}
+
+func UpdateUserReinforcementActivityQuery(tenantId string, rowId string, correctVersion int64) string {
+	return fmt.Sprintf("update user_reinforcement_activity set entity_version = %d where tenant_id = %d and id = '%s'",
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
