@@ -27,6 +27,11 @@ const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, e
 
 func main() {
 
+	mtlog.Init(&mtlog.Config{
+		Level:      mtlog.LogLevelInfo,
+		OutputPath: []string{"stdout", "application.log"},
+	})
+
 	ctx := context.Background()
 
 	track := "staging"
@@ -41,7 +46,7 @@ func main() {
 	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", track)
 
 	batchSize := 300
-	tenantIdList := []string{"1232533287673100755"}
+	tenantIdList := []string{"1215511379423111306"}
 	for _, tenantId := range tenantIdList {
 		mtlog.Infof(ctx, "starting for tenantId %v", tenantId)
 		start := 0
