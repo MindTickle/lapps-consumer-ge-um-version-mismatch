@@ -28,8 +28,8 @@ const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, e
 func main() {
 
 	mtlog.Init(&mtlog.Config{
-		Level:      mtlog.LogLevelInfo,
-		OutputPath: []string{"stdout", "application.log"},
+		Level:      mtlog.LogLevelWarn,
+		OutputPath: []string{"stdout", "application-2022-07-04.log"},
 	})
 
 	ctx := context.Background()
@@ -46,7 +46,7 @@ func main() {
 	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", track)
 
 	batchSize := 300
-	tenantIdList := []string{"1215511379423111306"}
+	tenantIdList := []string{"1245937454121845729"}
 	for _, tenantId := range tenantIdList {
 		mtlog.Infof(ctx, "starting for tenantId %v", tenantId)
 		start := 0
@@ -54,7 +54,7 @@ func main() {
 		for {
 			t1 := time.Now()
 			sqlQuery := fmt.Sprintf(FetchDataByTenantId, utils.StrTo(tenantId).OrgIdToInt64WithoutError(), batchSize, start)
-			mtlog.Infof(ctx, "at row %v", start)
+			mtlog.Infof(ctx, "starting at row %v", start)
 			docs, err := sqlStoreHelper.SearchRows(ctx, &mtstore_helper.SearchRowRequest{
 				TableName: "user_entity",
 				Query:     &mtstore_helper.SQLQueryString{Query: sqlQuery},
@@ -65,7 +65,7 @@ func main() {
 			})
 
 			if err != nil {
-				mtlog.Fatalf(nil, "Error connecting with doc service  %+v failed for tenantId %s", err, tenantId)
+				mtlog.Fatalf(nil, "Error connecting with doc service  %+v failed for start %d tenantId %s", err, start, tenantId)
 				return
 			}
 
@@ -75,7 +75,7 @@ func main() {
 				break
 			}
 
-			mtlog.Infof(ctx, "query time: %v for tenantId %s ", time.Since(t1), tenantId)
+			mtlog.Warningf(ctx, "query time: %v for start %d tenantId %s ", time.Since(t1), start, tenantId)
 
 			userEntities, err := GetUserEntityFromSqlStoreDocs(docs)
 			if err != nil {
@@ -91,6 +91,7 @@ func main() {
 
 			for _, activity := range userEntities {
 				if isLAEntity(activity) {
+					//mtlog.Infof(ctx, "isLAEntity(activity) : %v and it's %v ", isLAEntity(activity), activity.EntityType)
 					platformELData[GetEntityLearnerKey(utils.Int64ToDecimalStr(activity.EntityId), utils.Int64ToHexStr(activity.UserId))] = activity
 
 					if _, ok := companyWiseActivityDocs[activity.CompanyId]; !ok {
@@ -112,22 +113,21 @@ func main() {
 
 				t2 := time.Now()
 				resp, err := getDataInParallel(ctx, userModules, companyId, tenantId)
+				mtlog.Errorf(ctx, "getDataInParallel resp %s tenantId %s", resp, tenantId)
 				if err != nil {
-					mtlog.Errorf(ctx, "error while fetching data %v", err)
+					mtlog.Errorf(ctx, "error while fetching data %v tenantId %s in batchSize %s", err, tenantId, batchSize)
+					return
 				}
 
-				//requestBody := ReinforcementRequestObject{UserModules: userModules}
-				//jsonValue, _ := json.Marshal(requestBody)
-				//resp, err := http.Post(GetGameEngineReinforcementUrl(tenantId, companyId), "application/json", bytes.NewBuffer(jsonValue))
-				//if err != nil {
-				//	mtlog.Errorf(ctx, "Error in making post request to game engine err: %s. request body : %s", err, string(jsonValue))
-				//} else if resp.StatusCode != http.StatusOK {
-				//	mtlog.Errorf(ctx, "non 200 status code for game engine for reinforcement. request body : %s", string(jsonValue))
-				//}
-				//gebytes, err := ioutil.ReadAll(resp.Body)
-				//if err != nil {
-				//	mtlog.Errorf(ctx, "error in reading from response body")
-				//}
+				/*questList, err1 := getReinforcementDataInParallel(ctx, userModules, companyId, tenantId)
+				mtlog.Errorf(ctx, "getReinforcementDataInParallel questList %s tenantId %s", questList, tenantId)
+				if err1 != nil {
+					mtlog.Errorf(ctx, "error while fetching quest data %v tenantId %s", err1, tenantId)
+				}
+
+				for _, gs := range questList {
+					lappsUserEntities[GetEntityLearnerKey(gs.GamificationEntityId, gs.UserId)] = gs
+				}*/
 
 				for _, geSummary := range resp {
 					lappsUserEntities[GetEntityLearnerKey(geSummary.GamificationEntityId, geSummary.UserId)] = geSummary
@@ -135,12 +135,18 @@ func main() {
 				mtlog.Infof(ctx, "ge summary time: %v", time.Since(t2))
 			}
 
+			mtlog.Warningf(ctx, "platformELData : %s", platformELData)
+			mtlog.Infof(ctx, "len(platformELData) = %v", len(platformELData))
+
+			mtlog.Warningf(ctx, "lappsUserEntities : %s", lappsUserEntities)
+
 			execQueries := make([]mtstore_helper.ExecRequest, 0)
 			for elKey, platformData := range platformELData {
 
 				if geData, exists := lappsUserEntities[elKey]; exists {
+					mtlog.Warningf(ctx, "platformData.EntityVersion = %v and geData.Version = %v", platformData.EntityVersion, geData.Version)
 					if platformData.EntityVersion != geData.Version {
-						mtlog.Infof(ctx, "Got data issue %v %v tenantId %s companyId %s", platformData.CompanyId,
+						mtlog.Warningf(ctx, "Got data issue %v %v tenantId %s companyId %s", platformData.CompanyId,
 							elKey, tenantId, platformData.CompanyId)
 
 						execQuery := GetUpdateQuery(tenantId, platformData.Id(), geData.Version)
@@ -212,7 +218,7 @@ func main() {
 
 			if len(execQueries) > 0 {
 				mtlog.Infof(ctx, "Executing query tenantId %s", tenantId)
-				mtlog.Infof(ctx, "Query : %s", execQueries)
+				mtlog.Warningf(ctx, "Query : %s", execQueries)
 				execResp, err := sqlStoreHelper.Exec(ctx, &execQueries, common.RequestMeta{
 					OrgId:           tenantId,
 					CompanyId:       "",
@@ -230,6 +236,7 @@ func main() {
 			start = start + batchSize
 		}
 	}
+	mtlog.Infof(ctx, "script ended")
 }
 
 func getDataInParallel(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
@@ -257,24 +264,47 @@ func getDataInParallel(ctx context.Context, userModules []UserModule, companyId 
 	return resp, nil
 }
 
-func getGESummaryData(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
-	requestBody := LappsGetUserEntitiesRequestObject{UserModules: userModules}
+func getReinforcementDataInParallel(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
+	requestBody := ReinforcementRequestObject{UserModules: userModules}
 	jsonValue, _ := json.Marshal(requestBody)
-
-	resp, err := http.Post(GetGEUrlForActivityData(tenantId, companyId), "application/json", bytes.NewBuffer(jsonValue))
+	reinforcementResponse, err := http.Post(GetGameEngineReinforcementUrl(tenantId, companyId), "application/json", bytes.NewBuffer(jsonValue))
 	if err != nil {
-		mtlog.Errorf(ctx, "Error in making post request to game engine err: %s. request body : %s", err, string(jsonValue))
-		return nil, err
-	} else if resp.StatusCode != http.StatusOK {
-		mtlog.Errorf(ctx, "non 200 status code for game engine for user entities. request body : %s", string(jsonValue))
+		mtlog.Errorf(ctx, "error while fetching accessible module in series %v", err)
 		return nil, err
 	}
-	gebytes, err := ioutil.ReadAll(resp.Body)
+	gebytes, err := ioutil.ReadAll(reinforcementResponse.Body)
 	if err != nil {
 		mtlog.Errorf(ctx, "error in reading from response body")
 	}
 	var userEntityGeSummaries []*pojos.GESummaryESObject
 	_ = json.Unmarshal(gebytes, &userEntityGeSummaries)
+	mtlog.Infof(ctx, "reinforcementResponse %s gebytes %s userEntityGeSummaries %s", reinforcementResponse, gebytes, userEntityGeSummaries)
+	return userEntityGeSummaries, nil
+}
+
+func getGESummaryData(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
+	var userEntityGeSummaries = make([]*pojos.GESummaryESObject, 0)
+	for index := range userModules {
+		batch := userModules[index]
+		url := GetGEUrlForEntityData(batch.UserId, batch.EntityId, companyId)
+		resp, err := http.Get(url)
+		mtlog.Warningf(ctx, "resp of ge data: %s %s", url, resp)
+		if err != nil {
+			mtlog.Errorf(ctx, "Error in making post request to game engine err: %s. request body : %s", err, resp)
+			return nil, err
+		} else if resp.StatusCode != http.StatusOK {
+			mtlog.Errorf(ctx, "non 200 status code for game engine for user entities. request body : %s", resp)
+			return nil, err
+		}
+		gebytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			mtlog.Errorf(ctx, "error in reading from response body")
+		}
+
+		var geSummary *pojos.GESummaryESObject
+		_ = json.Unmarshal(gebytes, &geSummary)
+		userEntityGeSummaries = append(userEntityGeSummaries, geSummary)
+	}
 	return userEntityGeSummaries, nil
 }
 
@@ -342,7 +372,7 @@ func UpdateUserReinforcementActivityQuery(tenantId string, rowId string, correct
 }
 
 func isLAEntity(activity *UserEntityDbModel) bool {
-	laEntities := []string{"UPDATE", "COURSE", "ASSESSMENT", "CHECKLIST", "ILT"}
+	laEntities := []string{"UPDATE", "COURSE", "ASSESSMENT", "CHECKLIST", "ILT", "REINFORCEMENT"}
 	for _, entityType := range laEntities {
 		if activity.EntityType == entityType {
 			return true
@@ -355,12 +385,17 @@ func GetEntityLearnerKey(entityId string, userId string) string {
 	return entityId + "|" + userId
 }
 
+func GetGEUrlForEntityData(userId string, entityId string, companyId int64) string {
+	//user/:userId/company/:companyId/ge/:geId
+	return "http://ge.internal.staging.mindtickle.com/user/" + userId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/ge/" + entityId
+}
+
 func GetGEUrlForActivityData(orgId string, companyId int64) string {
 	return "http://ge.internal.mindtickle.com/org/" + orgId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/getUsersGEVOs"
 }
 
 func GetGameEngineReinforcementUrl(orgId string, companyId int64) string {
-	return "http://ge.internal.mindtickle.com/org/" + orgId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/reinforcement/getUserModules"
+	return "http://ge.internal.staging.mindtickle.com/org/" + orgId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/reinforcement/getUserModules"
 }
 
 func GetUserEntityFromSqlStoreDocs(docs []*tickleDbSqlStore.SqlRow) ([]*UserEntityDbModel, error) {
