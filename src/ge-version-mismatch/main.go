@@ -23,6 +23,12 @@ import (
 const UpdateUserEntityVersionQuery = "update user_entity set entity_version = %d where tenant_id = %d and id = '%s'"
 const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, entity_version, entity_type from user_entity " +
 	"where tenant_id= %d order by id ASC limit %d offset %d"
+const UpdateEntityVersionUserAssessmentActivityQuery = "update user_assessment_activity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateEntityVersionUserChecklistActivityQuery = "update user_checklist_activity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateEntityVersionUserCourseActivityQuery = "update user_course_activity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateEntityVersionUserIltActivityQuery = "update user_ilt_activity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateEntityVersionUserQuickUpdateActivityQuery = "update user_qu_activity set entity_version = %d where tenant_id = %d and id = '%s'"
+const UpdateEntityVersionUserReinforcementActivityQuery = "update user_reinforcement_activity set entity_version = %d where tenant_id = %d and id = '%s'"
 
 func main() {
 
@@ -115,7 +121,7 @@ func main() {
 				}
 
 				t2 := time.Now()
-				resp, err := getDataInParallel(ctx, userModules, companyId, tenantId)
+				resp, err := getDataInParallel(ctx, userModules, companyId)
 				mtlog.Errorf(ctx, "getDataInParallel resp %s tenantId %s", resp, tenantId)
 				if err != nil {
 					mtlog.Errorf(ctx, "error while fetching data %v tenantId %s in batchSize %s", err, tenantId, batchSize)
@@ -238,7 +244,7 @@ func main() {
 	mtlog.Infof(ctx, "script ended")
 }
 
-func getDataInParallel(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
+func getDataInParallel(ctx context.Context, userModules []UserModule, companyId int64) ([]*pojos.GESummaryESObject, error) {
 	errs, ctx := errgroup.WithContext(ctx)
 	batches := getBatches(userModules)
 	resp := make([]*pojos.GESummaryESObject, 0)
@@ -247,7 +253,7 @@ func getDataInParallel(ctx context.Context, userModules []UserModule, companyId 
 		batch := batches[index]
 		errs.Go(func() error {
 			var err error
-			data, err := getGESummaryData(ctx, batch, companyId, tenantId)
+			data, err := getGESummaryData(ctx, batch, companyId)
 			if err != nil {
 				mtlog.Errorf(ctx, "error while fetching accessible module in series %v", err)
 				return err
@@ -264,7 +270,7 @@ func getDataInParallel(ctx context.Context, userModules []UserModule, companyId 
 	return resp, nil
 }
 
-func getGESummaryData(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
+func getGESummaryData(ctx context.Context, userModules []UserModule, companyId int64) ([]*pojos.GESummaryESObject, error) {
 	var userEntityGeSummaries = make([]*pojos.GESummaryESObject, 0)
 	for index := range userModules {
 		batch := userModules[index]
@@ -317,42 +323,42 @@ func GetUpdateQuery(tenantId string, rowId string, correctVersion int64) string 
 
 func UpdateUserCourseActivityQuery(tenantId string, rowId string, correctVersion int64) string {
 
-	return fmt.Sprintf("update user_course_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserCourseActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
 }
 
 func UpdateUserQuickUpdateActivityQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_qu_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserQuickUpdateActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
 }
 
 func UpdateUserAssessmentActivityQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_assessment_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserAssessmentActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
 }
 
 func UpdateUserChecklistActivityQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_checklist_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserChecklistActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
 }
 
 func UpdateUserIltActivityQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_ilt_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserIltActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
 }
 
 func UpdateUserReinforcementActivityQuery(tenantId string, rowId string, correctVersion int64) string {
-	return fmt.Sprintf("update user_reinforcement_activity set entity_version = %d where tenant_id = %d and id = '%s'",
+	return fmt.Sprintf(UpdateEntityVersionUserReinforcementActivityQuery,
 		correctVersion,
 		utils.StrTo(tenantId).OrgIdToInt64WithoutError(),
 		rowId)
