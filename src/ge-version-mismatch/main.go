@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,9 +26,11 @@ const FetchDataByTenantId = "select tenant_id, company_id, user_id, entity_id, e
 
 func main() {
 
+	tenantIdList := []string{"1214796938671931602"}
+
 	mtlog.Init(&mtlog.Config{
-		Level:      mtlog.LogLevelWarn,
-		OutputPath: []string{"stdout", "application-2022-07-04.log"},
+		Level:      mtlog.LogLevelInfo,
+		OutputPath: []string{"stdout", fmt.Sprintf("application-%v-07-2022-tenantId-%s.log", time.Now().Day(), tenantIdList[0])},
 	})
 
 	ctx := context.Background()
@@ -46,7 +47,7 @@ func main() {
 	sqlStoreHelper := mtstore_helper.NewSqlStoreClient(conn, "automate-ge-version-mismatch", track)
 
 	batchSize := 300
-	tenantIdList := []string{"1245937454121845729"}
+
 	for _, tenantId := range tenantIdList {
 		mtlog.Infof(ctx, "starting for tenantId %v", tenantId)
 		start := 0
@@ -75,7 +76,7 @@ func main() {
 				break
 			}
 
-			mtlog.Warningf(ctx, "query time: %v for start %d tenantId %s ", time.Since(t1), start, tenantId)
+			mtlog.Infof(ctx, "query time: %v for start %d tenantId %s ", time.Since(t1), start, tenantId)
 
 			userEntities, err := GetUserEntityFromSqlStoreDocs(docs)
 			if err != nil {
@@ -91,7 +92,9 @@ func main() {
 
 			for _, activity := range userEntities {
 				if isLAEntity(activity) {
-					//mtlog.Infof(ctx, "isLAEntity(activity) : %v and it's %v ", isLAEntity(activity), activity.EntityType)
+					if utils.Int64ToDecimalStr(activity.EntityId) == "1216675537468414263" && utils.Int64ToHexStr(activity.UserId) == "498f5e687b5c85e5" {
+						mtlog.Infof(ctx, "found the required user and entity for userEntity platformELData formation")
+					}
 					platformELData[GetEntityLearnerKey(utils.Int64ToDecimalStr(activity.EntityId), utils.Int64ToHexStr(activity.UserId))] = activity
 
 					if _, ok := companyWiseActivityDocs[activity.CompanyId]; !ok {
@@ -119,34 +122,31 @@ func main() {
 					return
 				}
 
-				/*questList, err1 := getReinforcementDataInParallel(ctx, userModules, companyId, tenantId)
-				mtlog.Errorf(ctx, "getReinforcementDataInParallel questList %s tenantId %s", questList, tenantId)
-				if err1 != nil {
-					mtlog.Errorf(ctx, "error while fetching quest data %v tenantId %s", err1, tenantId)
-				}
-
-				for _, gs := range questList {
-					lappsUserEntities[GetEntityLearnerKey(gs.GamificationEntityId, gs.UserId)] = gs
-				}*/
-
 				for _, geSummary := range resp {
+					if geSummary.GamificationEntityId == "1216675537468414263" && geSummary.UserId == "498f5e687b5c85e5" {
+						mtlog.Infof(ctx, "found the required user and entity for geSummary")
+					}
 					lappsUserEntities[GetEntityLearnerKey(geSummary.GamificationEntityId, geSummary.UserId)] = geSummary
 				}
 				mtlog.Infof(ctx, "ge summary time: %v", time.Since(t2))
 			}
 
-			mtlog.Warningf(ctx, "platformELData : %s", platformELData)
-			mtlog.Infof(ctx, "len(platformELData) = %v", len(platformELData))
+			mtlog.Debugf(ctx, "platformELData : %s", platformELData)
+			mtlog.Debugf(ctx, "len(platformELData) = %v", len(platformELData))
 
-			mtlog.Warningf(ctx, "lappsUserEntities : %s", lappsUserEntities)
+			mtlog.Debugf(ctx, "lappsUserEntities : %s", lappsUserEntities)
 
 			execQueries := make([]mtstore_helper.ExecRequest, 0)
 			for elKey, platformData := range platformELData {
 
 				if geData, exists := lappsUserEntities[elKey]; exists {
-					mtlog.Warningf(ctx, "platformData.EntityVersion = %v and geData.Version = %v", platformData.EntityVersion, geData.Version)
+					mtlog.Debugf(ctx, "platformData.EntityVersion = %v and geData.Version = %v", platformData.EntityVersion, geData.Version)
+					if "1216675537468414263" == utils.Int64ToDecimalStr(platformData.EntityId) && utils.Int64ToHexStr(platformData.UserId) == "498f5e687b5c85e5" {
+						mtlog.Infof(ctx, "found the required user and entity for version mismatch check")
+						mtlog.Infof(ctx, "platformData.EntityVersion = %v and geData.Version = %v", platformData.EntityVersion, geData.Version)
+					}
 					if platformData.EntityVersion != geData.Version {
-						mtlog.Warningf(ctx, "Got data issue %v %v tenantId %s companyId %s", platformData.CompanyId,
+						mtlog.Infof(ctx, "Got data issue %v %v tenantId %s companyId %s", platformData.CompanyId,
 							elKey, tenantId, platformData.CompanyId)
 
 						execQuery := GetUpdateQuery(tenantId, platformData.Id(), geData.Version)
@@ -162,7 +162,6 @@ func main() {
 						strconv.FormatInt(platformData.UserId, 16),
 						strconv.FormatInt(platformData.CompanyId, 10),
 						strconv.FormatInt(platformData.EntityId, 10))
-					//6 table update "UPDATE", "COURSE", "ASSESSMENT", "CHECKLIST", "ILT", "REINFORCEMENT"
 					switch {
 					case platformData.EntityType == "UPDATE":
 						execQuery := UpdateUserQuickUpdateActivityQuery(tenantId, userEntityDataId, geData.Version)
@@ -218,7 +217,7 @@ func main() {
 
 			if len(execQueries) > 0 {
 				mtlog.Infof(ctx, "Executing query tenantId %s", tenantId)
-				mtlog.Warningf(ctx, "Query : %s", execQueries)
+				mtlog.Debugf(ctx, "Query : %s", execQueries)
 				execResp, err := sqlStoreHelper.Exec(ctx, &execQueries, common.RequestMeta{
 					OrgId:           tenantId,
 					CompanyId:       "",
@@ -256,6 +255,7 @@ func getDataInParallel(ctx context.Context, userModules []UserModule, companyId 
 			resp = append(resp, data...)
 			return err
 		})
+		time.Sleep(1 * time.Second)
 	}
 
 	if err := errs.Wait(); err != nil {
@@ -264,36 +264,22 @@ func getDataInParallel(ctx context.Context, userModules []UserModule, companyId 
 	return resp, nil
 }
 
-func getReinforcementDataInParallel(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
-	requestBody := ReinforcementRequestObject{UserModules: userModules}
-	jsonValue, _ := json.Marshal(requestBody)
-	reinforcementResponse, err := http.Post(GetGameEngineReinforcementUrl(tenantId, companyId), "application/json", bytes.NewBuffer(jsonValue))
-	if err != nil {
-		mtlog.Errorf(ctx, "error while fetching accessible module in series %v", err)
-		return nil, err
-	}
-	gebytes, err := ioutil.ReadAll(reinforcementResponse.Body)
-	if err != nil {
-		mtlog.Errorf(ctx, "error in reading from response body")
-	}
-	var userEntityGeSummaries []*pojos.GESummaryESObject
-	_ = json.Unmarshal(gebytes, &userEntityGeSummaries)
-	mtlog.Infof(ctx, "reinforcementResponse %s gebytes %s userEntityGeSummaries %s", reinforcementResponse, gebytes, userEntityGeSummaries)
-	return userEntityGeSummaries, nil
-}
-
 func getGESummaryData(ctx context.Context, userModules []UserModule, companyId int64, tenantId string) ([]*pojos.GESummaryESObject, error) {
 	var userEntityGeSummaries = make([]*pojos.GESummaryESObject, 0)
 	for index := range userModules {
 		batch := userModules[index]
 		url := GetGEUrlForEntityData(batch.UserId, batch.EntityId, companyId)
 		resp, err := http.Get(url)
-		mtlog.Warningf(ctx, "resp of ge data: %s %s", url, resp)
+		mtlog.Infof(ctx, "url of ge data: %s", url)
+		mtlog.Debugf(ctx, "Resp of ge data : %s", resp)
 		if err != nil {
-			mtlog.Errorf(ctx, "Error in making post request to game engine err: %s. request body : %s", err, resp)
+			mtlog.Errorf(ctx, "Error in getting game summary err: %s. request body : %s", err, resp)
 			return nil, err
+		} else if resp.StatusCode == http.StatusNotFound {
+			mtlog.Warningf(ctx, "StatusNotFound userId %s companyId %s entityId %s", batch.UserId, companyId, batch.EntityId)
+			continue
 		} else if resp.StatusCode != http.StatusOK {
-			mtlog.Errorf(ctx, "non 200 status code for game engine for user entities. request body : %s", resp)
+			mtlog.Errorf(ctx, "non 200 status code %s for game engine for user entities. request body : %s", resp.StatusCode, resp)
 			return nil, err
 		}
 		gebytes, err := ioutil.ReadAll(resp.Body)
@@ -311,8 +297,9 @@ func getGESummaryData(ctx context.Context, userModules []UserModule, companyId i
 func getBatches(modules []UserModule) [][]UserModule {
 	opsLength := len(modules)
 	var splitted [][]UserModule
-	for start := 0; start < opsLength; start += 30 {
-		end := start + 30
+	batchSize := 5
+	for start := 0; start < opsLength; start += batchSize {
+		end := start + batchSize
 		if end > opsLength {
 			end = opsLength
 		}
@@ -386,16 +373,7 @@ func GetEntityLearnerKey(entityId string, userId string) string {
 }
 
 func GetGEUrlForEntityData(userId string, entityId string, companyId int64) string {
-	//user/:userId/company/:companyId/ge/:geId
 	return "http://ge.internal.staging.mindtickle.com/user/" + userId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/ge/" + entityId
-}
-
-func GetGEUrlForActivityData(orgId string, companyId int64) string {
-	return "http://ge.internal.mindtickle.com/org/" + orgId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/getUsersGEVOs"
-}
-
-func GetGameEngineReinforcementUrl(orgId string, companyId int64) string {
-	return "http://ge.internal.staging.mindtickle.com/org/" + orgId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/reinforcement/getUserModules"
 }
 
 func GetUserEntityFromSqlStoreDocs(docs []*tickleDbSqlStore.SqlRow) ([]*UserEntityDbModel, error) {

@@ -31,14 +31,6 @@ func (b *UserEntityDbModel) Doc() []byte {
 	return res
 }
 
-type LappsGetUserEntitiesRequestObject struct {
-	UserModules []UserModule `json:"users"`
-}
-
-type ReinforcementRequestObject struct {
-	UserModules []UserModule `json:"userModules"`
-}
-
 type UserModule struct {
 	UserId   string `json:"userId"`
 	EntityId string `json:"entityId"`
