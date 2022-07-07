@@ -32,17 +32,18 @@ const UpdateEntityVersionUserReinforcementActivityQuery = "update user_reinforce
 
 func main() {
 
-	tenantIdList := []string{"1214796938671931602"}
+	tenantIdList := []string{"598851564828422091", "601750695889109690", "603064054389485772", "603230645817339328", "606786330229378423",
+		"606807873465789366", "608161145422037655", "609230816894535496", "610382636479437300", "610730375189137708"}
 
 	mtlog.Init(&mtlog.Config{
-		Level:      mtlog.LogLevelInfo,
+		Level:      mtlog.LogLevelDebug,
 		OutputPath: []string{"stdout", fmt.Sprintf("application-%v-07-2022-tenantId-%s.log", time.Now().Day(), tenantIdList[0])},
 	})
 
 	ctx := context.Background()
 
-	track := "staging"
-	serviceHost := "tdb-svc-sqlsvc.internal-grpc.staging.mindtickle.com"
+	track := "prod"
+	serviceHost := "tdb-svc-sqlsvc.internal-grpc.prod.mindtickle.com"
 
 	conn, err := grpc.Dial(serviceHost+":80", grpc.WithDefaultCallOptions(), grpc.WithInsecure())
 	if err != nil {
@@ -379,7 +380,7 @@ func GetEntityLearnerKey(entityId string, userId string) string {
 }
 
 func GetGEUrlForEntityData(userId string, entityId string, companyId int64) string {
-	return "http://ge.internal.staging.mindtickle.com/user/" + userId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/ge/" + entityId
+	return "http://gen-svc-ge-init-bulk.internal.prod.mindtickle.com/user/" + userId + "/company/" + utils.CnameToStringWithoutError(companyId) + "/ge/" + entityId
 }
 
 func GetUserEntityFromSqlStoreDocs(docs []*tickleDbSqlStore.SqlRow) ([]*UserEntityDbModel, error) {
